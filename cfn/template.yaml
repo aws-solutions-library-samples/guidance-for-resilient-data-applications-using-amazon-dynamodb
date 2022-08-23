@@ -1,0 +1,1007 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+
+Description: >
+  This template builds a resilient application using DynamoDB Global Tables.
+  This template can deploy either the full stack (including the tables) or just the
+  pieces that live in the secondary region.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: General
+        Parameters:
+          - ProjectTag
+          - FirstRegion
+          - OtherRegion
+          - Bucket
+      - Label:
+          default: API
+        Parameters:
+          - ApiStageName
+          - DomainName
+      - Label:
+          default: DynamoDB Tables
+        Parameters:
+          - TableNameCustomer
+          - TableNameProduct
+          - TableNameOrder
+
+Parameters:
+  FirstRegion:
+    Type: String
+    Description: The name of the region that will create the global tables
+    AllowedValues: 
+      - us-east-1
+      - us-east-2
+      - eu-west-1
+      - us-west-2
+  OtherRegion:
+    Type: String
+    Description: Of the two regions you're using, the name of the region that does not contain this stack
+    AllowedValues: 
+      - us-east-1
+      - us-east-2
+      - eu-west-1
+      - us-west-2
+  ProjectTag:
+    Type: String
+    Default: "resilientdynamo"
+  DomainName:
+    Type: String
+  Bucket:
+    Type: String
+  TableNameCustomer:
+    Type: String
+    Default: "resilientdynamo-Customers"
+  TableNameProduct:
+    Type: String
+    Default: "resilientdynamo-Product"
+  TableNameOrder:
+    Type: String
+    Default: "resilientdynamo-Order"
+  ApiStageName:
+    Type: String
+    Default: "test"
+
+Conditions:
+  IsPrimaryRegion: !Equals 
+      - !Ref FirstRegion
+      - !Ref AWS::Region
+
+Resources:
+
+###
+### Global Tables (primary region only)
+### 
+
+  GlobalTableCustomer:
+    Type: AWS::DynamoDB::GlobalTable
+    Condition: IsPrimaryRegion
+    Properties:
+      AttributeDefinitions:
+        - 
+          AttributeName: "CustomerId"
+          AttributeType: "S"
+      BillingMode: "PAY_PER_REQUEST"
+      KeySchema: 
+        - 
+          AttributeName: "CustomerId"
+          KeyType: "HASH"
+      Replicas:
+        -
+          Region: !Ref AWS::Region
+          Tags: 
+            -
+              Key: Project
+              Value: !Ref ProjectTag
+        -
+          Region: !Ref OtherRegion
+          Tags: 
+            -
+              Key: Project
+              Value: !Ref ProjectTag
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      TableName: !Ref TableNameCustomer
+  GlobalTableProduct:
+    Type: AWS::DynamoDB::GlobalTable
+    Condition: IsPrimaryRegion
+    Properties:
+      AttributeDefinitions:
+        - 
+          AttributeName: "ProductId"
+          AttributeType: "S"
+      BillingMode: "PAY_PER_REQUEST"
+      KeySchema: 
+        - 
+          AttributeName: "ProductId"
+          KeyType: "HASH"
+      Replicas:
+        -
+          Region: !Ref AWS::Region
+          Tags: 
+            -
+              Key: Project
+              Value: !Ref ProjectTag
+        -
+          Region: !Ref OtherRegion
+          Tags: 
+            -
+              Key: Project
+              Value: !Ref ProjectTag
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      TableName: !Ref TableNameProduct
+  GlobalTableOrders:
+    Type: AWS::DynamoDB::GlobalTable
+    Condition: IsPrimaryRegion
+    Properties:
+      AttributeDefinitions:
+        - 
+          AttributeName: "OrderId"
+          AttributeType: "S"
+      BillingMode: "PAY_PER_REQUEST"
+      KeySchema: 
+        - 
+          AttributeName: "OrderId"
+          KeyType: "HASH"
+      Replicas:
+        -
+          Region: !Ref AWS::Region
+          Tags: 
+            -
+              Key: Project
+              Value: !Ref ProjectTag
+        -
+          Region: !Ref OtherRegion
+          Tags: 
+            -
+              Key: Project
+              Value: !Ref ProjectTag
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      TableName: !Ref TableNameOrder
+
+###
+### API Gateway Resources
+### 
+
+  ApiHandler:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Ref ProjectTag
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+  ApiCloudWatchRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - apigateway.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs
+  ApiAccount:
+    Type: 'AWS::ApiGateway::Account'
+    Properties:
+      CloudWatchRoleArn: !GetAtt 
+        - ApiCloudWatchRole
+        - Arn
+  ApiCertificate:
+    Type: 'AWS::CertificateManager::Certificate'
+    Properties:
+      DomainName: !Ref DomainName
+      ValidationMethod: DNS
+  ApiDomainName:
+    Type: 'AWS::ApiGateway::DomainName'
+    Properties:
+      RegionalCertificateArn: !Ref ApiCertificate
+      DomainName: !Ref DomainName
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+  ApiMapping:
+    DependsOn: ApiDeployment
+    Type: 'AWS::ApiGateway::BasePathMapping'
+    Properties:
+      BasePath: "v1"
+      DomainName: !Ref ApiDomainName
+      RestApiId: !Ref ApiHandler
+      Stage: !Ref ApiStageName
+  OrderResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt ApiHandler.RootResourceId
+      PathPart: "orders"
+      RestApiId: !Ref ApiHandler
+  FillResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt ApiHandler.RootResourceId
+      PathPart: "fill"
+      RestApiId: !Ref ApiHandler
+  OrderReadMethod:
+    DependsOn: LambdaPermissionOrderRead
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: AWS_IAM
+      HttpMethod: GET
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        PassthroughBehavior: WHEN_NO_MATCH
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${OrderReadFn.Arn}/invocations
+      ResourceId: !Ref OrderResource
+      RestApiId: !Ref ApiHandler
+  OrderReadMethodCors:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: OPTIONS
+      Integration:
+        Type: MOCK
+        PassthroughBehavior: WHEN_NO_MATCH
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Headers : "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods : "'*'"
+            ResponseTemplates:
+              application/json: "{}"
+        RequestTemplates:
+          application/json: "{\"statusCode\": 200}"
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers : "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+            method.response.header.Access-Control-Allow-Methods : "'*'"
+            method.response.header.Access-Control-Allow-Origin : "'*'"
+          StatusCode: 200
+      ResourceId: !Ref OrderResource
+      RestApiId: !Ref ApiHandler
+  OrderCreateMethod:
+    DependsOn: LambdaPermissionOrderCreate
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: AWS_IAM
+      HttpMethod: POST
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        PassthroughBehavior: WHEN_NO_MATCH
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${OrderCreateFn.Arn}/invocations
+      ResourceId: !Ref OrderResource
+      RestApiId: !Ref ApiHandler
+  TestFillMethod:
+    DependsOn: LambdaPermissionTestFill
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: AWS_IAM
+      HttpMethod: POST
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        PassthroughBehavior: WHEN_NO_MATCH
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${TestFillFn.Arn}/invocations
+      ResourceId: !Ref FillResource
+      RestApiId: !Ref ApiHandler
+  TestFillMethodCors:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: OPTIONS
+      Integration:
+        Type: MOCK
+        PassthroughBehavior: WHEN_NO_MATCH
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Headers : "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods : "'*'"
+            ResponseTemplates:
+              application/json: "{}"
+        RequestTemplates:
+          application/json: "{\"statusCode\": 200}"
+      MethodResponses:
+        - ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers : "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+            method.response.header.Access-Control-Allow-Methods : "'*'"
+            method.response.header.Access-Control-Allow-Origin : "'*'"
+          StatusCode: 200
+      ResourceId: !Ref FillResource
+      RestApiId: !Ref ApiHandler
+  ApiDeployment:
+    DependsOn: OrderReadMethod
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId: !Ref ApiHandler
+      StageName: !Ref ApiStageName
+      StageDescription:
+        DataTraceEnabled: true
+        Description: String
+        LoggingLevel: INFO
+        MetricsEnabled: true
+  
+  
+        
+###
+### Lambda Resources
+### 
+
+  LambdaPermissionOrderRead:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !GetAtt OrderReadFn.Arn
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Join ["", ["arn:aws:execute-api:", !Ref 'AWS::Region', ":", !Ref 'AWS::AccountId', ":", !Ref ApiHandler, "/*"]]
+  LambdaPermissionOrderCreate:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !GetAtt OrderCreateFn.Arn
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Join ["", ["arn:aws:execute-api:", !Ref 'AWS::Region', ":", !Ref 'AWS::AccountId', ":", !Ref ApiHandler, "/*"]]
+  LambdaPermissionTestFill:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !GetAtt TestFillFn.Arn
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Join ["", ["arn:aws:execute-api:", !Ref 'AWS::Region', ":", !Ref 'AWS::AccountId', ":", !Ref ApiHandler, "/*"]]
+  
+  ApiBackendFnRole:
+    Type: "AWS::IAM::Role"
+    Properties: 
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "lambda.amazonaws.com"
+            Action:
+                - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        - "arn:aws:iam::aws:policy/CloudWatchFullAccess"
+      Policies:
+        -
+          PolicyName: lambdasforapi
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              -
+                Effect: Allow
+                Action: dynamodb:*
+                Resource: !Join ["", ["arn:aws:dynamodb:", !Ref AWS::Region, ":", !Ref AWS::AccountId, ":table/", !Ref TableNameCustomer]]
+              -
+                Effect: Allow
+                Action: dynamodb:*
+                Resource: !Join ["", ["arn:aws:dynamodb:", !Ref AWS::Region, ":", !Ref AWS::AccountId, ":table/", !Ref TableNameProduct]]
+              -
+                Effect: Allow
+                Action: dynamodb:*
+                Resource: !Join ["", ["arn:aws:dynamodb:", !Ref AWS::Region, ":", !Ref AWS::AccountId, ":table/", !Ref TableNameOrder]]
+
+  OrderReadFn:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Description: "This function returns an order"
+      MemorySize: 1024
+      Runtime: "python3.8"
+      Timeout: 30
+      Role: !GetAtt ApiBackendFnRole.Arn
+      Handler: "index.handler"
+      Code: 
+        ZipFile: |
+          from __future__ import print_function
+          import boto3
+          import os
+          import traceback
+          import json
+          import time
+          from collections import defaultdict
+
+          ptbl = os.environ['ProductTable']
+          otbl = os.environ['OrderTable']
+          cw_ns = os.environ['CwNamespace']
+          cw_metric = os.environ['CwMetric']
+          cw_dim_name = os.environ['CwDimName']
+          cw_dim_value = os.environ['CwDimValue']
+          ddb = boto3.client('dynamodb')
+          cw = boto3.client('cloudwatch')
+
+          def respond(err, res=None):
+            return {
+                'statusCode': '400' if err else '200',
+                'body': str(err) if err else json.dumps(res),
+                'headers': {
+                    'Content-Type': 'application/json',
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Credentials": 'true'
+                },
+            }
+        
+          def handler(event, context):
+            print("Received event: " + json.dumps(event, indent=2))
+            operation = event['httpMethod']
+
+            if operation != "GET":
+              return respond(ValueError('Unsupported method "{}"'.format(operation)))
+            else:
+              payload = event['queryStringParameters'] 
+              productId = payload['productId']
+              orderId = payload['orderId']
+              print(f"Getting order for order {orderId} and product {productId}")
+
+              try:
+                  t1 = time.time()
+                  response = ddb.transact_get_items(
+                    TransactItems=[
+                        {
+                            'Get': {
+                                'Key': {
+                                    'ProductId': {
+                                        'S': productId
+                                    }
+                                },
+                                'TableName': ptbl,
+                            }
+                        },
+                        {
+                            'Get': {
+                                'Key': {
+                                    'OrderId': {
+                                        'S': orderId
+                                    }
+                                },
+                                'TableName': otbl,
+                            }
+                        }
+                    ],
+                    ReturnConsumedCapacity='TOTAL'
+                  )
+                  t2 = time.time()
+                  t_delta = (t2 - t1) * 1000.0
+                  cw.put_metric_data(
+                      Namespace=cw_ns,
+                      MetricData=[
+                          {
+                              'MetricName': cw_metric,
+                              'Dimensions': [
+                                  {
+                                      'Name': cw_dim_name,
+                                      'Value': cw_dim_value 
+                                  },
+                              ],
+                              'Value': t_delta,
+                              'Unit': 'Milliseconds',
+                              'StorageResolution': 1
+                          },
+                      ]
+                  )
+
+                  print("SUCCESS: Dynamo transact get items succeeded")
+                  items = {}
+                  for r in response['Responses']:
+                    item = r['Item']
+                    if 'ProductId' in item:
+                      items['ProductId'] = item['ProductId']['S']
+                    elif 'OrderId' in item:
+                      items['OrderId'] = item['OrderId']['S']
+                  print(f"Returning {json.dumps(items)}")
+                  return respond(None, items)
+              except Exception as e:
+                trc = traceback.format_exc()
+                print("ERROR: Unexpected error: Could not get order {0}: {1} - {2}".format(orderId, str(e), trc))
+                return respond(ValueError("ERROR: Unexpected error: Could not get order {0}: {1} - {2}".format(orderId, str(e), trc)))
+
+      Environment:
+        Variables:
+          ProductTable: !Ref TableNameProduct
+          OrderTable: !Ref TableNameOrder
+          CwNamespace: !Ref ProjectTag
+          CwMetric: "ReadTime"
+          CwDimName: "Region"
+          CwDimValue: !Join ["-", [!Ref AWS::Region, !Ref AWS::Region]]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectTag
+        - Key: Name
+          Value: !Join ["", [!Ref ProjectTag, "-OrderReadFn"]]
+
+  OrderCreateFn:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Description: "This function creates an order"
+      MemorySize: 1024
+      Runtime: "python3.8"
+      Timeout: 30
+      Role: !GetAtt ApiBackendFnRole.Arn
+      Handler: "index.handler"
+      Code: 
+        ZipFile: |
+          from __future__ import print_function
+          import boto3
+          import os
+          import traceback
+          import json
+          import time
+          from collections import defaultdict
+
+          ctbl = os.environ['CustomerTable']
+          ptbl = os.environ['ProductTable']
+          otbl = os.environ['OrderTable']
+          cw_ns = os.environ['CwNamespace']
+          cw_metric = os.environ['CwMetric']
+          cw_dim_name = os.environ['CwDimName']
+          cw_dim_value = os.environ['CwDimValue']
+          ddb = boto3.client('dynamodb')
+          cw = boto3.client('cloudwatch')
+
+          def respond(err, res=None):
+            return {
+                'statusCode': '400' if err else '200',
+                'body': str(err) if err else json.dumps(res),
+                'headers': {
+                    'Content-Type': 'application/json',
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Credentials": 'true'
+                },
+            }
+        
+          def handler(event, context):
+            print("Received event: " + json.dumps(event, indent=2))
+            operation = event['httpMethod']
+
+            if operation != "POST":
+              return respond(ValueError('Unsupported method "{}"'.format(operation)))
+            else:
+              payload = event['queryStringParameters'] 
+              productId = payload['productId']
+              orderId = payload['orderId']
+              customerId = payload['customerId']
+              print("Storing order {0} for product {1}, customer {2}".format(orderId, productId, customerId))
+
+              try:
+                  t1 = time.time()
+                  response = ddb.transact_write_items(
+                    TransactItems=[
+                        {
+                            'ConditionCheck': {
+                                'Key': {
+                                    'CustomerId': {
+                                        'S': customerId
+                                    }
+                                },
+                                'TableName': ctbl,
+                                'ConditionExpression': 'attribute_exists(CustomerId)'
+                            }
+                        },
+                        {
+                            'Update': {
+                                'Key': {
+                                    'ProductId': {
+                                        'S': productId
+                                    }
+                                },
+                                'UpdateExpression': 'SET ProductStatus = :new_status',
+                                'TableName': ptbl,
+                                'ConditionExpression': 'ProductStatus = :expected_status',
+                                'ExpressionAttributeValues': {
+                                    ':new_status': {
+                                        'S': 'SOLD'
+                                    },
+                                    ':expected_status': {
+                                        'S': 'IN_STOCK'
+                                    }
+                                },
+                                'ReturnValuesOnConditionCheckFailure': 'ALL_OLD'
+                            }
+                        },
+                        {
+                            'Put': {
+                                'Item': {
+                                    'OrderId': {
+                                        'S': orderId
+                                    },
+                                    'ProductId': {
+                                        'S': productId
+                                    },
+                                    'CustomerId': {
+                                        'S': customerId
+                                    },
+                                    'OrderStatus': {
+                                        'S': "CONFIRMED"
+                                    },
+                                    'OrderTotal': {
+                                        'N': '100'
+                                    }
+                                },
+                                'TableName': otbl,
+                                'ConditionExpression': 'attribute_not_exists(OrderId)',
+                                'ReturnValuesOnConditionCheckFailure': 'ALL_OLD'
+                            }
+                        }
+                    ],
+                    ReturnConsumedCapacity='TOTAL'
+                  )
+                  t2 = time.time()
+                  t_delta = (t2 - t1) * 1000.0
+                  cw.put_metric_data(
+                      Namespace=cw_ns,
+                      MetricData=[
+                          {
+                              'MetricName': cw_metric,
+                              'Dimensions': [
+                                  {
+                                      'Name': cw_dim_name,
+                                      'Value': cw_dim_value 
+                                  },
+                              ],
+                              'Value': t_delta,
+                              'Unit': 'Milliseconds',
+                              'StorageResolution': 1
+                          },
+                      ]
+                  )
+
+                  print("SUCCESS: Dynamo transact put succeeded")
+                  return respond(None, {'msg': "Order created"})
+              except Exception as e:
+                trc = traceback.format_exc()
+                print("ERROR: Unexpected error: Could not store order: {0} - {1}".format(str(e), trc))
+                return respond(ValueError('Could not store order'));
+
+      Environment:
+        Variables:
+          ProductTable: !Ref TableNameProduct
+          OrderTable: !Ref TableNameOrder
+          CustomerTable: !Ref TableNameCustomer
+          CwNamespace: !Ref ProjectTag
+          CwMetric: "WriteTime"
+          CwDimName: "Region"
+          CwDimValue: !Join ["-", [!Ref AWS::Region, !Ref AWS::Region]]
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectTag
+        - Key: Name
+          Value: !Join ["", [!Ref ProjectTag, "-OrderCreateFn"]]
+  TestFillFn:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Description: "This function populates the database with sample data"
+      MemorySize: 1024
+      Runtime: "python3.8"
+      Timeout: 30
+      Role: !GetAtt ApiBackendFnRole.Arn
+      Handler: "index.handler"
+      Code: 
+        ZipFile: |
+          from __future__ import print_function
+          import boto3
+          import os
+          import traceback
+          import json
+          import time
+          import uuid
+          from collections import defaultdict
+
+          ctbl = os.environ['CustomerTable']
+          ptbl = os.environ['ProductTable']
+          otbl = os.environ['OrderTable']
+          ddb = boto3.client('dynamodb')
+          max_batch_size = 25
+
+          def respond(err, res=None):
+            return {
+                'statusCode': '400' if err else '200',
+                'body': str(err) if err else json.dumps(res),
+                'headers': {
+                    'Content-Type': 'application/json',
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Credentials": 'true'
+                },
+            }
+        
+          def handler(event, context):
+            print("Received event: " + json.dumps(event, indent=2))
+            operation = event['httpMethod']
+
+            if operation != "POST":
+              return respond(ValueError('Unsupported method "{}"'.format(operation)))
+            else:
+              payload = event['queryStringParameters'] 
+              num_customers = int(payload['cust'])
+              num_orders = int(payload['order'])
+              num_product = int(payload['product'])
+              print("Creating {0} products,  {1} orders, {2} customers".format(num_product, num_orders, num_customers))
+
+              try:
+                  cust_made = []
+                  prod_made = []
+                  order_made = []
+                  for (num_items, tbl, pkey, item_ids) in [(num_customers, ctbl, 'CustomerId', cust_made), (num_product, ptbl, 'ProductId', prod_made), (num_orders, otbl, 'OrderId', order_made)]:
+                    print(f"Creating {num_items} of {tbl}...")
+                    items_to_make = []
+                    for ii in range(num_items):
+                      i_id = str(uuid.uuid4())
+                      i_item = {
+                        'PutRequest': {
+                            'Item': {
+                                pkey: {
+                                    'S': i_id
+                                }
+                            }
+                          }  
+                      }
+                      if tbl == ptbl:
+                        i_item['PutRequest']['Item']['ProductStatus'] = {'S': 'IN_STOCK'}
+                      items_to_make.append(i_item)
+                      item_ids.append(i_id)
+                      if len(items_to_make) == max_batch_size or ii == (num_items-1):
+                        ddb.batch_write_item(
+                          RequestItems={ tbl: items_to_make },
+                          ReturnConsumedCapacity='TOTAL'
+                        )
+                        items_to_make.clear()
+
+                  print("SUCCESS: Dynamo fill succeeded")
+                  return respond(None, {'customers': cust_made, 'products': prod_made, 'orders': order_made})
+              except Exception as e:
+                trc = traceback.format_exc()
+                print("ERROR: Unexpected error: Could not store order: {0} - {1}".format(str(e), trc))
+                return respond(ValueError('Could not store order'));
+
+      Environment:
+        Variables:
+          ProductTable: !Ref TableNameProduct
+          OrderTable: !Ref TableNameOrder
+          CustomerTable: !Ref TableNameCustomer
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectTag
+        - Key: Name
+          Value: !Join ["", [!Ref ProjectTag, "-TestFillFn"]]
+
+  UlidLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      CompatibleRuntimes:
+        - python3.7
+        - python3.8
+        - python3.9
+      Content:
+        S3Bucket: !Ref Bucket
+        S3Key: "lambda/ulid.zip"
+      LayerName: LayerUlid
+
+
+###
+### CloudWatch Resources
+### 
+
+  Dashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Join ["-", ["DynamoDB","Metrics",!Ref AWS::Region]]
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+              {
+                  "type": "metric",
+                  "x": 0,
+                  "y": 2,
+                  "width": 6,
+                  "height": 6,
+                  "properties": {
+                      "view": "timeSeries",
+                      "stacked": false,
+                      "metrics": [
+                          [ "AWS/DynamoDB", "ReplicationLatency", "TableName", "${TableNameProduct}", "ReceivingRegion", "${OtherRegion}" ]
+                      ],
+                      "region": "${AWS::Region}",
+                      "title": "ReplicationLatency - Product"
+                  }
+              },
+              {
+                  "type": "metric",
+                  "x": 6,
+                  "y": 2,
+                  "width": 6,
+                  "height": 6,
+                  "properties": {
+                      "metrics": [
+                          [ "AWS/DynamoDB", "ReplicationLatency", "TableName", "${TableNameCustomer}", "ReceivingRegion", "${OtherRegion}" ]
+                      ],
+                      "view": "timeSeries",
+                      "stacked": false,
+                      "region": "${AWS::Region}",
+                      "period": 300,
+                      "stat": "Average",
+                      "title": "ReplicationLatency - Customer"
+                  }
+              },
+              {
+                  "type": "metric",
+                  "x": 12,
+                  "y": 2,
+                  "width": 6,
+                  "height": 6,
+                  "properties": {
+                      "metrics": [
+                          [ "AWS/DynamoDB", "ReplicationLatency", "TableName", "${TableNameOrder}", "ReceivingRegion", "${OtherRegion}" ]
+                      ],
+                      "view": "timeSeries",
+                      "stacked": false,
+                      "region": "${AWS::Region}",
+                      "period": 300,
+                      "stat": "Average",
+                      "title": "ReplicationLatency - Orders"
+                  }
+              },
+              {
+                  "type": "metric",
+                  "x": 0,
+                  "y": 10,
+                  "width": 18,
+                  "height": 7,
+                  "properties": {
+                      "view": "timeSeries",
+                      "stacked": false,
+                      "metrics": [
+                          [ "AWS/DynamoDB", "SuccessfulRequestLatency", "TableName", "${TableNameCustomer}", "Operation", "TransactWriteItems" ],
+                          [ "...", "${TableNameOrder}", ".", "." ],
+                          [ "...", "TransactGetItems" ],
+                          [ "...", "${TableNameProduct}", ".", "TransactWriteItems" ],
+                          [ "...", "TransactGetItems" ],
+                          [ "...", "BatchWriteItem" ]
+                      ],
+                      "title": "Database operation latency",
+                      "region": "${AWS::Region}"
+                  }
+              },
+              {
+                  "type": "text",
+                  "x": 0,
+                  "y": 0,
+                  "width": 18,
+                  "height": 2,
+                  "properties": {
+                      "markdown": "# Replication Latency"
+                  }
+              },
+              {
+                  "type": "text",
+                  "x": 0,
+                  "y": 8,
+                  "width": 18,
+                  "height": 2,
+                  "properties": {
+                      "markdown": "# Request Latency"
+                  }
+              },
+              {
+                  "type": "metric",
+                  "x": 0,
+                  "y": 19,
+                  "width": 18,
+                  "height": 7,
+                  "properties": {
+                      "view": "timeSeries",
+                      "stacked": false,
+                      "metrics": [
+                          [ "resilientdynamo", "ReadTime", "Region", "${AWS::Region}-${AWS::Region}" ],
+                          [ ".", "WriteTime", ".", "." ]
+                      ],
+                      "region": "${AWS::Region}",
+                      "title": "Observed latency, ${AWS::Region} to ${AWS::Region}"
+                  }
+              },
+              {
+                  "type": "text",
+                  "x": 0,
+                  "y": 17,
+                  "width": 18,
+                  "height": 2,
+                  "properties": {
+                      "markdown": "# Observed Client Latency"
+                  }
+              },
+              {
+                  "type": "text",
+                  "x": 0,
+                  "y": 27,
+                  "width": 18,
+                  "height": 2,
+                  "properties": {
+                      "markdown": "# Request Counts"
+                  }
+              },
+              {
+                  "type": "metric",
+                  "x": 0,
+                  "y": 29,
+                  "width": 18,
+                  "height": 7,
+                  "properties": {
+                      "view": "timeSeries",
+                      "stacked": false,
+                      "metrics": [
+                          [ "AWS/DynamoDB", "SuccessfulRequestLatency", "TableName", "${TableNameCustomer}", "Operation", "TransactWriteItems" ],
+                          [ "...", "${TableNameOrder}", ".", "." ],
+                          [ "...", "TransactGetItems" ],
+                          [ "...", "${TableNameProduct}", ".", "TransactWriteItems" ],
+                          [ "...", "TransactGetItems" ],
+                          [ "...", "BatchWriteItem" ]
+                      ],
+                      "title": "Database operation counts",
+                      "stat": "SampleCount",
+                      "period": 60,
+                      "region": "${AWS::Region}"
+                  }
+              },
+              {
+                  "type": "metric",
+                  "x": 0,
+                  "y": 39,
+                  "width": 18,
+                  "height": 7,
+                  "properties": {
+                      "view": "timeSeries",
+                      "stacked": false,
+                      "metrics": [
+                          [ "resilientdynamo", "ReadTime", "Region", "${AWS::Region}-${AWS::Region}" ],
+                          [ ".", "WriteTime", ".", "." ]
+                      ],
+                      "stat": "SampleCount",
+                      "period": 10,
+                      "region": "${AWS::Region}",
+                      "title": "Lambda invocation counts"
+                  }
+              }
+          ]
+        }
+
+Outputs:
+  CustomerTableName:
+    Description: DynamoDB Global Table Name for Customers
+    Value: !Ref TableNameCustomer
+  ProductTableName:
+    Description: DynamoDB Global Table Name for Products
+    Value: !Ref TableNameProduct
+  OrderTableName:
+    Description: DynamoDB Global Table Name for Orders
+    Value: !Ref TableNameOrder
+  ApiUrl:
+    Value: !Join [ "", ["https://", !Ref ApiHandler, ".execute-api.", !Ref 'AWS::Region', ".amazonaws.com/", !Ref ApiStageName]]
+  FirstRegion:
+    Value: !Ref FirstRegion
+  OtherRegion:
+    Value: !Ref OtherRegion
+  ApiId:
+    Value: !Ref ApiHandler
+  CertArn:
+    Value: !Ref ApiCertificate
+  RegionalDomain:
+    Value: !GetAtt ApiDomainName.RegionalDomainName
+  RegionalZone:
+    Value: !GetAtt ApiDomainName.RegionalHostedZoneId
+  ReadFnArn:
+    Value: !GetAtt OrderReadFn.Arn
+  WriteFnArn:
+    Value: !GetAtt OrderCreateFn.Arn
+

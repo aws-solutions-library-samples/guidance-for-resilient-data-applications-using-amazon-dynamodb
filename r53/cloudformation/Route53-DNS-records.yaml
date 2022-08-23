@@ -1,0 +1,87 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+
+#
+# This template demonstrates how to configure Amazon Route53 Failover record sets that use 
+# Amazon Route53 Application Recovery Controller (ARC) healthchecks
+#
+# For a full description of how it works, please read
+# https://aws.amazon.com/fr/blogs/aws/amazon-route-53-application-recovery-controller/
+#
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'This template creates Amazon Route53 DNS Failover Records with healthcheck for the DynamoDB five-9s app'
+Parameters:
+  DNSDomainName:
+    Description: The DNS domain name for the API
+    Type: String 
+  HostedZoneId:
+    Description: "ID of the existing hosted zone"
+    Type: String
+  Region1:
+    Description: The first region
+    Type: String 
+  Region2:
+    Description: The second region
+    Type: String 
+  DNSHealthcheckId1:
+    Description: The heatlh check ID for the first cell
+    Type: String 
+  DNSHealthcheckId2:
+    Description: The heatlh check ID for the second cell
+    Type: String 
+  RegionalEndpoint1:
+    Description: The regional API in the first region
+    Type: String 
+  RegionalEndpoint2:
+    Description: The regional API in the second region
+    Type: String 
+  RegionalZone1:
+    Description: The API Gateway hosted zone id in the first region
+    Type: String
+  RegionalZone2:
+    Description: The API Gateway hosted zone id in the second region
+    Type: String
+  ProjectId:
+    Type: String
+    Default: "Dynamo59"
+
+Resources:
+
+#
+# The PRIMARY and SECONDARY failover DNS records.
+# These are A records as Aliases to the Load Balancer DNS name.
+#
+  FrontEndAliasRecordPrimary:
+      Type: AWS::Route53::RecordSet
+      Properties:
+        Comment: Latency records for first region
+        HostedZoneId: !Ref HostedZoneId
+        Name: !Sub ${DNSDomainName}.
+        Region: !Ref Region1
+        Type: A
+        AliasTarget:
+          DNSName: !Sub ${RegionalEndpoint1}
+          EvaluateTargetHealth: false
+          HostedZoneId: !Sub ${RegionalZone1}
+        SetIdentifier: !Sub ${ProjectId}-${Region1}
+        HealthCheckId: !Sub ${DNSHealthcheckId1}
+
+  FrontEndAliasRecordSecondary:
+      Type: AWS::Route53::RecordSet
+      Properties:
+        Comment: Latency records for second region
+        HostedZoneId: !Ref HostedZoneId
+        Name: !Sub ${DNSDomainName}.
+        Region: !Ref Region2
+        Type: A
+        AliasTarget:
+          DNSName: !Sub ${RegionalEndpoint2}
+          EvaluateTargetHealth: false
+          HostedZoneId: !Sub ${RegionalZone2}
+        SetIdentifier: !Sub ${ProjectId}-${Region2}
+        HealthCheckId: !Sub ${DNSHealthcheckId2}
+
+Outputs:
+  DNSRecordName:
+    Value: !Ref FrontEndAliasRecordSecondary
+  

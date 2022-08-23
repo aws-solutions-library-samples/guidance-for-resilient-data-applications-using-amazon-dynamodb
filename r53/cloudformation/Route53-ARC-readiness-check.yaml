@@ -1,0 +1,174 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+
+#
+# This template demonstrates how to configure Amazon Route53 Application Recovery Controller Readiness Checks
+# For a full description of how it works, please read
+# https://aws.amazon.com/fr/blogs/aws/amazon-route-53-application-recovery-controller/
+#
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'This template creates an Amazon Route53 Application Recovery Controller Readiness Check for the DynamoDB five-9s app'
+Parameters:
+  Region1:
+    Default: us-east-1
+    Description: The region for the first cell
+    Type: String 
+
+  Region2:
+    Default: us-west-2
+    Description: The region for the second cell
+    Type: String 
+
+  Stage1: 
+    Description: The ARN of the API Gateway stage in cell 1
+    Type: String 
+
+  Stage2: 
+    Description: The ARN of the API Gateway stage in cell 2
+    Type: String 
+
+  FnRead1: 
+    Description: The ARN of the read function in cell 1
+    Type: String 
+
+  FnRead2: 
+    Description: The ARN of the read function in cell 2
+    Type: String 
+
+  FnWrite1: 
+    Description: The ARN of the write function in cell 1
+    Type: String 
+
+  FnWrite2: 
+    Description: The ARN of the write function in cell 2
+    Type: String 
+
+  DynamoDBTableCustomer:
+    Description: The ARN of the DynamoDB Global Table for customers
+    Type: String 
+  DynamoDBTableProduct:
+    Description: The ARN of the DynamoDB Global Table for products
+    Type: String 
+  DynamoDBTableOrder:
+    Description: The ARN of the DynamoDB Global Table for orders
+    Type: String 
+
+  ProjectId:
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: Must begin with a letter and contain only alphanumeric
+      characters.
+    Default: Dynamo59
+    Description: The name of the project
+    MaxLength: '64'
+    MinLength: '1'
+    Type: String
+
+Resources:
+
+#
+# The Application Recovery Controller cells
+#
+  Cell1:
+    Type: AWS::Route53RecoveryReadiness::Cell
+    Properties:
+      CellName: !Sub ${ProjectId}-Cell1-${Region1}
+
+  Cell2:
+    Type: AWS::Route53RecoveryReadiness::Cell
+    Properties:
+      CellName: !Sub ${ProjectId}-Cell2-${Region2}
+
+#
+# The Application Recovery Controller recovery groups
+#
+  RecoveryGroup:
+    Type: AWS::Route53RecoveryReadiness::RecoveryGroup
+    Properties:
+      RecoveryGroupName: !Sub ${ProjectId}-RecoveryGroup
+      Cells: 
+        - !GetAtt Cell1.CellArn
+        - !GetAtt Cell2.CellArn
+
+#
+# The Application Recovery Controller resource set
+#
+
+# the API Gateway stages
+  ResourceSetAPIGW:
+    Type: AWS::Route53RecoveryReadiness::ResourceSet
+    Properties:
+        ResourceSetName: !Sub ${ProjectId}-ResourceSet-APIGW
+        Resources: 
+          - ResourceArn: !Ref Stage1
+            ReadinessScopes:
+              - !GetAtt Cell1.CellArn        
+          - ResourceArn: !Ref Stage2
+            ReadinessScopes:
+              - !GetAtt Cell2.CellArn        
+        
+        ResourceSetType: AWS::ApiGateway::Stage
+
+# the Lambda functions
+  ResourceSetLambda:
+    Type: AWS::Route53RecoveryReadiness::ResourceSet
+    Properties:
+        ResourceSetName: !Sub ${ProjectId}-ResourceSet-Lambda
+        Resources: 
+          - ResourceArn: !Ref FnRead1
+            ReadinessScopes:
+              - !GetAtt Cell1.CellArn        
+          - ResourceArn: !Ref FnRead2
+            ReadinessScopes:
+              - !GetAtt Cell2.CellArn        
+          - ResourceArn: !Ref FnWrite1
+            ReadinessScopes:
+              - !GetAtt Cell1.CellArn        
+          - ResourceArn: !Ref FnWrite2
+            ReadinessScopes:
+              - !GetAtt Cell2.CellArn        
+        
+        ResourceSetType: AWS::Lambda::Function
+
+# the DynamoDB tables
+  ResourceSetDynamoDB:
+    Type: AWS::Route53RecoveryReadiness::ResourceSet
+    Properties:
+        ResourceSetName: !Sub ${ProjectId}-ResourceSet-DDB
+        Resources: 
+          - ResourceArn: !Ref DynamoDBTableCustomer
+            ReadinessScopes:
+              - !GetAtt Cell1.CellArn        
+          - ResourceArn: !Ref DynamoDBTableProduct
+            ReadinessScopes:
+              - !GetAtt Cell1.CellArn        
+          - ResourceArn: !Ref DynamoDBTableOrder
+            ReadinessScopes:
+              - !GetAtt Cell1.CellArn        
+        
+        ResourceSetType: AWS::DynamoDB::Table
+
+#
+# The Application Recovery Controller readiness checks
+#
+
+# the APIGW stages
+  ReadinessCheckAPIGW:
+    Type: AWS::Route53RecoveryReadiness::ReadinessCheck
+    Properties:
+      ReadinessCheckName: !Sub ${ProjectId}-ReadinessCheck-APIGW
+      ResourceSetName: !Ref ResourceSetAPIGW
+
+# the lambda functions
+  ReadinessCheckLambda:
+    Type: AWS::Route53RecoveryReadiness::ReadinessCheck
+    Properties:
+      ReadinessCheckName: !Sub ${ProjectId}-ReadinessCheck-Lambda
+      ResourceSetName: !Ref ResourceSetLambda
+
+# the DynamoDB table
+  ReadinessCheckDynamoDB:
+    Type: AWS::Route53RecoveryReadiness::ReadinessCheck
+    Properties:
+      ReadinessCheckName: !Sub ${ProjectId}-ReadinessCheck-DynamoDB
+      ResourceSetName: !Ref ResourceSetDynamoDB
