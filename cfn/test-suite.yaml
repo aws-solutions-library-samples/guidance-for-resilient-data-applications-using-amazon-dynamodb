@@ -118,70 +118,16 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       Description: Hits the API to generate test data
-      Handler: index.lambda_handler
-      Runtime: python3.7
+      Handler: test-suite-create.lambda_handler
+      Runtime: python3.9
       Timeout: 60
       Role: !GetAtt LambdaRole.Arn
-      Layers: 
-          - !Ref AuthLayer
       Code:
-        ZipFile: |
-          import json
-          import time
-          import requests
-          from sigv4a_sign import SigV4ASign
-          import os
-
-          max_batch = int(os.environ['MAX_BATCH_SIZE'])
-
-          # URL looks like: https://<url>/v1/fill?cust=20&order=0&product=20
-          def lambda_handler(event, context):
-              print(json.dumps(event))
-              num_items = int(event['num_items'])
-              api_url = event['url']
-              print(f"Generating {num_items} items by calling {api_url}")
-              responses = []
-
-              service = 'execute-api'
-              region = '*'
-              method = 'POST'
-
-              processed = 0
-
-              while processed < num_items:
-                next_batch = max_batch
-                remaining = num_items - processed
-                if remaining < max_batch:
-                  next_batch = remaining
-                print(f"Generating {next_batch} items, {processed} already done, {remaining} left")
-
-                url = f"https://{api_url}/v1/fill?cust={next_batch}&order=0&product={next_batch}"
-                headers = SigV4ASign().get_headers_basic(service, region, method, url)
-                response = requests.post(url, headers=headers)
-
-                print(response)
-                r = response.json()
-                print(r)
-                p = r['products']
-                c = r['customers']
-                for prod,cust in zip(p,c):
-                  responses.append({'customer': cust, 'product': prod})
-                processed = processed + next_batch
-
-              return {'items': responses}
+        S3Bucket: !Ref Bucket
+        S3Key: lambda/test-suite.zip
       Environment:
         Variables:
           MAX_BATCH_SIZE: 25
-
-  AuthLayer:
-    Type: AWS::Lambda::LayerVersion
-    Properties:
-      CompatibleRuntimes:
-        - python3.7
-      Content:
-        S3Bucket: !Ref Bucket
-        S3Key: "lambda/auth.zip"
-      LayerName: AuthIamPythonSigV4
 
   LambdaRole:
     Type: AWS::IAM::Role
@@ -210,51 +156,14 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       Description: Hits the API to create and then read an order
-      Handler: index.lambda_handler
-      Runtime: python3.7
+      Handler: test-suite-read.lambda_handler
+      Runtime: python3.9
       Timeout: 60
       Role: !GetAtt LambdaRole.Arn
-      Layers: 
-          - !Ref AuthLayer
       Code:
-        ZipFile: |
-          import json
-          import time
-          import requests
-          import os
-          import uuid
-          from sigv4a_sign import SigV4ASign
+        S3Bucket: !Ref Bucket
+        S3Key: lambda/test-suite.zip
 
-          # URL looks like: https://<url>/v1/orders?customerId=foo&productId=bar&orderId=baz
-          def lambda_handler(event, context):
-              print(json.dumps(event))
-              api_url = event['url']
-              cust = event['order']['customer']
-              prod = event['order']['product']
-              order = str(uuid.uuid4())
-              print(f"Generating order for customer {cust} and product {prod}, using ID {order}")
-
-              service = 'execute-api'
-              region = '*'
-              method = 'POST'
-              url = f"https://{api_url}/v1/orders?customerId={cust}&orderId={order}&productId={prod}"
-
-              headers = SigV4ASign().get_headers_basic(service, region, method, url)
-              r = requests.post(url, headers=headers)
-
-              print(f"Response from post: {r.status_code}")
-              if r.status_code > 299:
-                raise Exception(f"Got invalid return code from request: {r.status_code}")
-
-              url = f"https://{api_url}/v1/orders?orderId={order}&productId={prod}"
-              method = 'GET'
-              headers = SigV4ASign().get_headers_basic(service, region, method, url)
-              r = requests.get(url, headers=headers)
-              print(f"Response from get: {r.status_code}")
-              if r.status_code > 299:
-                raise Exception(f"Got invalid return code from request: {r.status_code}")
-
-              return {'status': 200}
 
 Outputs:
   WorkflowName:

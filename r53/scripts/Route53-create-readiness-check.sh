@@ -4,28 +4,29 @@
 
 
 APP_STACK=$1
+REGION1=$2
 
-if [ "$APP_STACK" == "" ]
+if [ "$APP_STACK" == "" ] || [ "$REGION1" == "" ]
 then
-    echo "Usage: $0 <application stack name>"
+    echo "Usage: $0 <STACK> <REGION1>"
     exit 1
 fi
 
-region1=`aws cloudformation describe-stacks --stack-name $APP_STACK | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="FirstRegion").OutputValue'`
-region2=`aws cloudformation describe-stacks --stack-name $APP_STACK | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="OtherRegion").OutputValue'`
-ctbl=`aws cloudformation describe-stacks --stack-name $APP_STACK | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="CustomerTableName").OutputValue'`
-otbl=`aws cloudformation describe-stacks --stack-name $APP_STACK | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="OrderTableName").OutputValue'`
-ptbl=`aws cloudformation describe-stacks --stack-name $APP_STACK | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="ProductTableName").OutputValue'`
+region1=`aws cloudformation describe-stacks --stack-name $APP_STACK --region $REGION1 | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="FirstRegion").OutputValue'`
+region2=`aws cloudformation describe-stacks --stack-name $APP_STACK --region $REGION1 | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="OtherRegion").OutputValue'`
+ctbl=`aws cloudformation describe-stacks --stack-name $APP_STACK --region $REGION1 | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="CustomerTableName").OutputValue'`
+otbl=`aws cloudformation describe-stacks --stack-name $APP_STACK --region $REGION1 | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="OrderTableName").OutputValue'`
+ptbl=`aws cloudformation describe-stacks --stack-name $APP_STACK --region $REGION1 | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="ProductTableName").OutputValue'`
 acct=`aws sts get-caller-identity --query "Account" --output text`
 carn="arn:aws:dynamodb:$region1:$acct:table/$ctbl"
 parn="arn:aws:dynamodb:$region1:$acct:table/$ptbl"
 oarn="arn:aws:dynamodb:$region1:$acct:table/$otbl"
-apiid1=`aws cloudformation describe-stacks --stack-name $APP_STACK | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="ApiId").OutputValue'`
+apiid1=`aws cloudformation describe-stacks --stack-name $APP_STACK --region $REGION1 | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="ApiId").OutputValue'`
 s1arn="arn:aws:apigateway:$region1:$acct:/restapis/$apiid1/stages/test"
 apiid2=`aws cloudformation describe-stacks --stack-name $APP_STACK --region $region2 | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="ApiId").OutputValue'`
 s2arn="arn:aws:apigateway:$region2:$acct:/restapis/$apiid2/stages/test"
-readfn1=`aws cloudformation describe-stacks --stack-name $APP_STACK | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="ReadFnArn").OutputValue'`
-writefn1=`aws cloudformation describe-stacks --stack-name $APP_STACK | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="WriteFnArn").OutputValue'`
+readfn1=`aws cloudformation describe-stacks --stack-name $APP_STACK --region $REGION1 | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="ReadFnArn").OutputValue'`
+writefn1=`aws cloudformation describe-stacks --stack-name $APP_STACK --region $REGION1 | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="WriteFnArn").OutputValue'`
 readfn2=`aws cloudformation describe-stacks --stack-name $APP_STACK --region $region2 | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="ReadFnArn").OutputValue'`
 writefn2=`aws cloudformation describe-stacks --stack-name $APP_STACK --region $region2 | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="WriteFnArn").OutputValue'`
 

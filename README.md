@@ -47,7 +47,7 @@ You need a hosted zone registered in Amazon Route 53. This is used for defining 
 
 The instructions use the AWS CLI rather than the console for consistency.  The console changes frequently and screenshots are usually out of date within weeks, whereas the CLI is stable.  We also use the Python SDK, so make sure you have Python installed, along with the `boto3` module.
 
-You will need an AWS account and a user or role in that account with permission to create resources in several AWS services:
+You will need an AWS account and access to an Amazon Linux 2 compatible environment ([CloudShell](https://aws.amazon.com/cloudshell/) or [Cloud9](https://aws.amazon.com/cloud9/) are both AWS native ways to achive this) with permission to create resources in several AWS services:
 
 * DynamoDB
 * IAM
@@ -55,10 +55,6 @@ You will need an AWS account and a user or role in that account with permission 
 * API Gateway
 * Route 53
 * S3
-
-The instructions also refer to using [Postman](https://www.postman.com/) to test REST API calls.  Postman is free for the type of usage required here, but you can substitute another tool of your choice, or simply issue API calls using a programming language.  Since the APIs we call require the use of the [SIGv4 signing process](https://docs.aws.amazon.com/general/latest/gr/signature-version-4.html), you should use a tool or language that supports this signing process directly.
-
-Finally, you'll need Docker installed on your workstation.
 
 Going forward, we will refer to inputs you need to provide in `ALL CAPS`.  This will include the names of S3 buckets and your domain name.
 
@@ -88,50 +84,19 @@ For convenience, we've provided a script that creates buckets.  Execute these co
     python ./scripts/make_bucket.py --name BUCKET2 --region REGION2
     python ./scripts/make_bucket.py --name BUCKET3 --region REGION3
 
-#### Lambda
+#### Test suite
 
-We'll use two Lambda layers.  The first contains the [ULID](https://github.com/ahawker/ulid) package.  
+Upload the test-suite script to each bucket.
 
-    mkdir ulid
-    cd ulid
-    pip install ulid-py -t ./python
-    zip -r ulid.zip python
-    aws s3 cp ulid.zip s3://BUCKET1/lambda/ulid.zip
-    aws s3 cp ulid.zip s3://BUCKET2/lambda/ulid.zip
+    mkdir test-suite
+    cd test-suite
+    pip3 install requests boto3 botocore awscrt -t .
+    cp ../test/test-suite-*.py .
+    zip -r test-suite.zip *
     cd ..
 
-The second layer contains a [SIGv4a](https://github.com/aws-samples/sigv4a-signing-examples) signing library.  SIGv4a allows us to create requests signed for multiple regions.
-
-Execute:
-
-    cd auth
-    docker build -t amzlinuxpy37 .
-    docker run -it amzlinuxpy37 bash
-
-This starts a shell inside the container.  In that shell, run:
-
-    mkdir layer
-    cd layer
-    sudo yum install -y wget
-    pip3 install requests -t ./python
-    pip3 install awscrt -t ./python
-    pip3 install boto3 botocore -t ./python
-    wget https://raw.githubusercontent.com/aws-samples/sigv4a-signing-examples/main/python/sigv4a_sign.py
-    mv sigv4a_sign.py python
-    zip -r auth.zip python
-
-In another terminal, find the ID of the running Docker container:
-
-    docker ps
-
-Now copy the zip file to your local machine:
-
-    docker cp <container ID>:/layer/auth.zip .
-    aws s3 cp auth.zip s3://BUCKET1/lambda/auth.zip
-    aws s3 cp auth.zip s3://BUCKET2/lambda/auth.zip
-    cd ..
-
-At this point you can exit the shell in the running container.
+    aws s3 cp test-suite/test-suite.zip s3://BUCKET1/lambda/test-suite.zip
+    aws s3 cp test-suite/test-suite.zip s3://BUCKET2/lambda/test-suite.zip   
 
 #### Canary script
 
@@ -139,14 +104,20 @@ Upload the canary script to each bucket.
 
     mkdir canary
     cd canary
-    pip install --target ./python aws-requests-auth
-    cp ../test/canary.py python/
+    pip3 install botocore awscrt -t ./python
+    cp ../test/canary.py ./python
     zip -r canary.zip python
     cd ..
 
     aws s3 cp canary/canary.zip s3://BUCKET1/canary/canary.zip
     aws s3 cp canary/canary.zip s3://BUCKET2/canary/canary.zip
     aws s3 cp canary/canary.zip s3://BUCKET3/canary/canary.zip
+
+### Manual test scripts
+
+Install dependencies locally
+
+    pip3 install boto3 botocore awscrt
 
 ### Deploy application in first region
 
@@ -188,29 +159,24 @@ If you update the Lambda functions in the stacks after the initial deployment, y
 
 The CloudFormation stacks output several useful pieces of information.  You can obtain these by running:
 
-    aws cloudformation describe-stacks --stack-name STACK | jq -r '.Stacks[0].Outputs[]'
+    aws cloudformation describe-stacks --stack-name STACK --region REGION1 | jq -r '.Stacks[0].Outputs[]'
     aws cloudformation describe-stacks --stack-name STACK --region REGION2 | jq -r '.Stacks[0].Outputs[]'
 
-For convenience, the file `test/resilient-dynamo.postman_collection.json` has several methods you can use to exercise the API.  Open this file in your favorite text editor, and go to the section called `variables` starting on line 587.  Enter values for each variable:
+Now you can execute several of the included scripts to test that the application is working in both regions. For each script, select either `ApiUrl` from the commands above to test the region.
 
-* access_key - Use your own AWS access key for your account.  We use this to authorize calls to the API Gateway endpoints.
-* secret_key - Use your own AWS secret key for your account.  We use this to authorize calls to the API Gateway endpoints.
-* region1 - Enter the name for your first region, e.g. `us-west-2`
-* region2 - Enter the name for your second region, e.g. `us-east-1`
-* base_url - Enter the name for your API endpoint in the first region.  You can get this from the `ApiUrl` output of the CloudFormation stack in the first region.  Omit the `https://` part of the `ApiUrl` output.
-* base_url_r2 - Enter the name for your API endpoint in the second region.  You can get this from the `ApiUrl` output of the CloudFormation stack in the second region.  Omit the `https://` part of the `ApiUrl` output.
-* base_url_domain - Enter your personal domain name followed by `/v1`, e.g. `helloworldapi.replacewithyourcompanyname.com/v1`.
+The first script populates the tables with example customers and products. Execute this method and take note of the output, which includes the customer and product IDs.
 
-If you use temporary credentials for your AWS account, you should also configure the `Session Token` in the `Authorization` section.
+    python3 ./test/r1-fill.py APIURL
 
-Download and install the [Postman](https://www.postman.com/downloads/) client for your workstation.  Once you have it installed, [import](https://learning.postman.com/docs/getting-started/importing-and-exporting-data/) the sample methods in `test/resilient-dynamo.postman_collection.json`.  
+Once you have sample customers and products, execute this method to create an order.  Set the parameter `customerId` to one of the customer IDs created in the previous method, and set the `productId` parameter to one of the example product IDs.  Set the `orderId` to any unique value.
 
-Now you can execute several of the included methods to test that the application is working in both regions.
+    python3 ./test/r1-create.py APIURL CSUSTOMERID PRODUCTID ORDERID
 
-* `r1-fill`: This method populates the tables with example customers and products.  The parameters `cust` and `product` determine how many of each are created.  Execute this method and take note of the output, which includes the customer and product IDs.  Leave the parameter `order` set to 0.
-* `r1-create`: Once you have sample customers and products, execute this method to create an order.  Set the parameter `customerId` to one of the customer IDs created in the previous method, and set the `productId` parameter to one of the example product IDs.  Set the `orderId` to any unique value.
-* `r1-read`: You can now retrieve the order you just made.  Set the parameters `orderId` and `productId` to the values you used in the previous method.
-* `r2-read`: This method retrieves the order by issuing a call to the application in the second region.
+You can now retrieve the order you just made.  Set the parameters `orderId` and `productId` to the values you used in the previous method.
+
+    python3 ./test/r1-read.py APIURL ORDERID PRODUCTID
+
+Try retrieving the order again, but use the alternative `ApiUrl`. You can see that the order has been replicated across regions.
 
 ### Set up global routing
 
@@ -225,15 +191,15 @@ Look for the hosted zone that aligns to your domain name, and look for the ID.  
 Once you have this information, run:
 
     cd r53/scripts
-    ./Route53-create-readiness-check.sh STACK
+    ./Route53-create-readiness-check.sh STACK REGION1
 
 Wait for this stack to complete before moving on.
 
-    ./Route53-create-routing-control.sh STACK
+    ./Route53-create-routing-controls.sh STACK REGION1
 
 Wait for this stack to complete before moving on.
 
-    ./Route53-create-dns-records.sh STACK DOMAIN HOSTED_ZONE
+    ./Route53-create-dns-records.sh STACK DOMAIN HOSTED_ZONE_ID REGION1
 
 Wait for this stack to complete before moving on.
 
@@ -243,11 +209,11 @@ The routing controls are off by default.  We'll turn them on using the CLI.  Whi
 
 In the next command we'll need the `ClusterArn` and `ControlPanelArn` outputs of the stack called `Route53ARC-RoutingControl`.  You can retrieve these by running:
 
-    aws cloudformation describe-stacks --stack-name Route53ARC-RoutingControl | jq -r '.Stacks[0].Outputs[]'
+    aws cloudformation describe-stacks --stack-name Route53ARC-RoutingControl --region us-west-2 | jq -r '.Stacks[0].Outputs[]'
 
 Now we can run:
 
-    aws route53-recovery-control-config describe-cluster --cluster-arn <cluster ARN>
+    aws route53-recovery-control-config describe-cluster --region us-west-2 --cluster-arn <cluster ARN>
 
 Note the five endpoints listed in the output.  Pick any one and now run:
 
@@ -257,16 +223,22 @@ On initial deployment, both routing controls are off.  Let's turn them on:
 
     aws route53-recovery-cluster update-routing-control-states \
 				--update-routing-control-state-entries \
-				'[{"RoutingControlArn": "<control ARN from previous output>",
-				"RoutingControlState": "On"}, \
-				{"RoutingControlArn": "<second control ARN from previous output>",
-				"RoutingControlState": "On"}]' \
+				'[{"RoutingControlArn": "<routing control ARN from previous output>", "RoutingControlState": "On"},
+				{"RoutingControlArn": "<second routing control ARN from previous output>", "RoutingControlState": "On"}]' \
 				--region <endpoint region> \
 				--endpoint-url <endpoint URL>
 
 ### Test the Route 53 endpoint
 
-Now you can use Postman to test the Route 53 endpoint.  You can use the methods `r53-fill`, `r53-create`, and `r53-read` to exercise the application via the Route 53 DNS entry.  These methods work the same as the ones we used earlier to test the application in a single region.
+Now you can use the scripts to test the endpoints via your DOMAIN. Prefix your DOMAIN with `https://` and suffix with `/v1` to create DOMAIN_URL. For example, if your DOMAIN was `helloworldapi.replacewithyourcompanyname.com`, DOMAIN_URL would be `https://helloworldapi.replacewithyourcompanyname.com/v1`
+    
+    python3 ./test/r1-fill.py DOMAIN_URL
+
+    python3 ./test/r1-create.py DOMAIN_URL CSUSTOMERID PRODUCTID ORDERID
+
+    python3 ./test/r1-read.py DOMAIN_URL ORDERID PRODUCTID
+
+Route53 is directing requests to either REGION1 or REGION2 for processing.
 
 ### Dashboard
 
@@ -280,7 +252,6 @@ We can now deploy the canary in both application regions and the observer region
         BUCKET1 \
         BUCKET2 \
         BUCKET3 \
-        OBS_STACK_NAME \
         REGION1 \
         REGION2 \
         REGION3 \
@@ -323,8 +294,8 @@ Run this helper script to invoke the test application in both regions.
         300 \
         <ARC endpoint region> \
         <ARC endpoint URL> \
-        <control ARN for first region from previous ARC output> \
-        <control ARN for second region from previous ARC output>
+        <routing control ARN for first region from previous ARC output> \
+        <routing control ARN for second region from previous ARC output>
 
 The script will print out the approximately time the test began in both regions.  It will then sleep for a time interval of 5 minutes before switching the routing control in one region to `OFF`.
 
@@ -361,9 +332,10 @@ In order to clean up the resources deployed by this sample, you must delete all 
 
 Point-in-time recovery protects DynamoDB tables from accidental write or delete operations, allowing you to recover from a point-in-time within 35 days.  You can enable this feature on each local replica of a global table. When you restore the table, the backup restores to an independent table that is not part of the global table.  If you are using Version 2019.11.21, or greater of global tables, you can create a new global table from the restored table. For more information, see [Global tables: How it works](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/V2globaltables_HowItWorks.html) or [CloudFormation Point-in-time Reocvery Specification](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-dynamodb-table-pointintimerecoveryspecification.html) 
 
-## Appendix: ULID
+## Common Issues
 
-We use (but do not distribute) this Python ULID library: https://github.com/ahawker/ulid
+`botocore.crt has no method named 'auth'`
+When installing `awscrt` via pip, the version that is installed must match the architecture and Python version of the environment that it will run in. This error occurs when there is a version mismatch.
 
 ## Security
 
