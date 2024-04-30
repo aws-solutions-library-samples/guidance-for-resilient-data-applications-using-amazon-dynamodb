@@ -58,7 +58,8 @@ aws cloudformation $CFN_CMD --stack-name $stackname \
     --disable-rollback \
     --parameters \
     ParameterKey=Bucket,ParameterValue=$templatebucket \
-    --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM
+    --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+    --region $region
 
 aws cloudformation $CFN_CMD --stack-name $stackname \
     --template-url $TEMPLATE_URL \

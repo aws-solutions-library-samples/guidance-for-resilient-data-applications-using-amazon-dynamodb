@@ -8,18 +8,9 @@ STACK_NAME=Route53-dns-records
 APP_STACK=$1
 DNS_DOMAIN_NAME=$2
 HOSTED_ZONE=$3
+REGION1=$4
 
-if [ "$APP_STACK" == "" ]
-then
-    echo "Usage: $0 <application stack name> <domain name> <hosted zone>"
-    exit 1
-fi
-if [ "$DNS_DOMAIN_NAME" == "" ]
-then
-    echo "Usage: $0 <application stack name> <domain name> <hosted zone>"
-    exit 1
-fi
-if [ "$HOSTED_ZONE" == "" ]
+if [ "$APP_STACK" == "" ] || [ "$DNS_DOMAIN_NAME" == "" ] || [ "$HOSTED_ZONE" == "" ] || [ "$REGION1" == "" ]
 then
     echo "Usage: $0 <application stack name> <domain name> <hosted zone>"
     exit 1
@@ -29,10 +20,10 @@ ROUTE53_HEALTHCHECKID_CELL1=$(aws --region $REGION cloudformation describe-stack
 ROUTE53_HEALTHCHECKID_CELL2=$(aws --region $REGION cloudformation describe-stacks --stack-name Route53ARC-RoutingControl --query "Stacks[].Outputs[?OutputKey=='HealthCheckIdWest'].OutputValue" --output text)
 
 
-region1=`aws cloudformation describe-stacks --stack-name $APP_STACK | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="FirstRegion").OutputValue'`
-region2=`aws cloudformation describe-stacks --stack-name $APP_STACK | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="OtherRegion").OutputValue'`
-rend1=`aws cloudformation describe-stacks --stack-name $APP_STACK | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="RegionalDomain").OutputValue'`
-rzone1=`aws cloudformation describe-stacks --stack-name $APP_STACK | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="RegionalZone").OutputValue'`
+region1=`aws cloudformation describe-stacks --stack-name $APP_STACK --region $REGION1 | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="FirstRegion").OutputValue'`
+region2=`aws cloudformation describe-stacks --stack-name $APP_STACK --region $REGION1 | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="OtherRegion").OutputValue'`
+rend1=`aws cloudformation describe-stacks --stack-name $APP_STACK --region $REGION1 | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="RegionalDomain").OutputValue'`
+rzone1=`aws cloudformation describe-stacks --stack-name $APP_STACK --region $REGION1 | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="RegionalZone").OutputValue'`
 rend2=`aws cloudformation describe-stacks --stack-name $APP_STACK --region $region2 | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="RegionalDomain").OutputValue'`
 rzone2=`aws cloudformation describe-stacks --stack-name $APP_STACK --region $region2 | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="RegionalZone").OutputValue'`
 

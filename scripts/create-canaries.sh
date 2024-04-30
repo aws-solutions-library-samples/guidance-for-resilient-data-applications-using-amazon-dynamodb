@@ -6,16 +6,16 @@ templateprefix=cfn
 templatebucket=$1
 secondbucket=$2
 thirdbucket=$3
-stackname=$4
-firstregion=$5
-secondregion=$6
-obsregion=$7
-apiname1=$8
-apiname2=$9
-apistagename=${10}
-product=${11}
-order=${12}
-domainname=${13}
+stackname=resilientdynamo-canaries
+firstregion=$4
+secondregion=$5
+obsregion=$6
+apiname1=$7
+apiname2=$8
+apistagename=${9}
+product=${10}
+order=${11}
+domainname=${12}
 SCRIPTDIR=`dirname $0`
 if [ "$templatebucket" == "" ]
 then
@@ -164,7 +164,8 @@ aws cloudformation $CFN_CMD --stack-name $stackname \
     ParameterKey=ApiStageName,ParameterValue=$apistagename \
     ParameterKey=SampleProduct,ParameterValue=$product \
     ParameterKey=SampleOrder,ParameterValue=$order \
-    --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM
+    --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+    --region $firstregion
 
 aws cloudformation $CFN_CMD --stack-name $stackname \
     --template-url $TEMPLATE_URL \

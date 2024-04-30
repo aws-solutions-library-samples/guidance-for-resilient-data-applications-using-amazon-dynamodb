@@ -112,7 +112,7 @@ Resources:
       Tags: [{Key: Project, Value: !Ref ProjectTag}]
       StartCanaryAfterCreation: true
       Schedule: {Expression: 'rate(1 minute)', DurationInSeconds: 3600}
-      RuntimeVersion: syn-python-selenium-1.2
+      RuntimeVersion: syn-python-selenium-3.0
       RunConfig: {TimeoutInSeconds: 60, EnvironmentVariables: {"ApiName": !Ref ApiName1, "ApiRegion": !Ref FirstRegion, "ApiStage": !Ref ApiStageName, "ProductId": !Ref SampleProduct, "OrderId": !Ref SampleOrder}}
       Name: !Join ["-", [!Ref ProjectTag, "canary", !Ref FirstRegion]]
       ExecutionRoleArn: !GetAtt CanaryRole.Arn
@@ -124,7 +124,7 @@ Resources:
       Tags: [{Key: Project, Value: !Ref ProjectTag}]
       StartCanaryAfterCreation: true
       Schedule: {Expression: 'rate(1 minute)', DurationInSeconds: 3600}
-      RuntimeVersion: syn-python-selenium-1.2
+      RuntimeVersion: syn-python-selenium-3.0
       RunConfig: {TimeoutInSeconds: 60, EnvironmentVariables: {"ApiName": !Ref ApiName2, "ApiRegion": !Ref SecondRegion, "ApiStage": !Ref ApiStageName, "ProductId": !Ref SampleProduct, "OrderId": !Ref SampleOrder}}
       Name: !Join ["-", [!Ref ProjectTag, "canary", !Ref SecondRegion]]
       ExecutionRoleArn: !GetAtt CanaryRole.Arn

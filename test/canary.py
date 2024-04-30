@@ -1,45 +1,32 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: MIT-0
 
-import json
-import http.client
-import urllib.parse
 import os
-from aws_synthetics.selenium import synthetics_webdriver as syn_webdriver
-from aws_synthetics.common import synthetics_logger as logger
-from aws_requests_auth.aws_auth import AWSRequestsAuth
-from aws_requests_auth.boto_utils import BotoAWSRequestsAuth
-import requests
+import logging
+import boto3
+from botocore.auth import SigV4Auth
+from botocore.awsrequest import AWSRequest
+from urllib.request import urlopen, Request
 
+logger = logging.getLogger('logger')
 
 def verify_request(apihandler, order, product, region, apistage):
-    api_url = f"{apihandler}.execute-api.{region}.amazonaws.com"
-    auth = BotoAWSRequestsAuth(aws_host=api_url,
-        aws_region=region,
-        aws_service='execute-api')
+    method = "GET"
+    service = "execute-api"
+    host = f"{apihandler}.execute-api.{region}.amazonaws.com"
+    api_url = f"https://{host}/{apistage}/orders?orderId={order}&productId={product}"
 
-    user_agent = str(syn_webdriver.get_canary_user_agent_string())
-    headers = {}
-    if "User-Agent" in headers:
-        headers["User-Agent"] = " ".join([user_agent, headers["User-Agent"]])
-    else:
-        headers["User-Agent"] = "{}".format(user_agent)
+    session = boto3.Session(region_name=region)
+    request = AWSRequest(method, api_url, headers={'Host': host})
+    SigV4Auth(session.get_credentials(), service, region).add_auth(request)
 
-    logger.info("Making request with Method: 'GET' URL: %s" % ( api_url))
-    response = requests.get(f"https://{api_url}/{apistage}/orders", params={"orderId": order, "productId": product}, auth=auth)
-    logger.info("Status Code: %s " % response.status_code)
+    httprequest = Request(api_url, headers=dict(request.headers))
 
-    if not response.status_code or response.status_code < 200 or response.status_code > 299:
-        try:
-            r = response.json()
-            logger.error("Response: %s" % json.dumps(r))
-        finally:
-            raise Exception("Failed with status code: %s" % response.status_code)
+    with urlopen(httprequest) as response:
+        print(response.status)
 
-    r = response.json()
-    logger.info("Response: %s" % json.dumps(r))
-    logger.info("HTTP request successfully executed")
-
+    if not response.status or response.status < 200 or response.status > 299:
+        raise Exception("Failed with status code: %s" % response.status)
 
 def main():
 
