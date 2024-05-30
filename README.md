@@ -1,14 +1,10 @@
 # Guidance for Resilient Data Applications using Amazon DynamoDB
 
-## Table of Content (required)
-
-List the top-level sections of the README template, along with a hyperlink to the specific section.
-
-### Required
+## Table of Content
 
 1. [Overview](#overview-required)
-    - [Organization] (#organization)
-    - [Architecture] (#architecture)    
+    - [Organization](#organization)
+    - [Architecture](#architecture)    
     - [Cost](#cost)
 2. [Prerequisites](#prerequisites)
     - [Operating System](#operating-system)
@@ -76,13 +72,13 @@ The following table provides a sample cost breakdown for deploying this Guidance
 | AWS service  | Dimensions | Cost [USD] |
 | ----------- | ------------ | ------------ |
 | Amazon Route53 | 1 Application Recovery Controller (ARC) cluster  | $1800 month |
-| CloudWatch Canaries | 5 canaries running every minute | $ 259.00 month |
+| CloudWatch Canaries | 5 canaries running every minute | $ 259 month |
 
 ## Prerequisites
 
 ### Operating System
 
-This guidance is deployed and run from within an AWS Account using an Amazon Linux 2 compatible environment like ([CloudShell](https://aws.amazon.com/cloudshell/) or [Cloud9](https://aws.amazon.com/cloud9/).
+This guidance is deployed and run from within an AWS Account using an Amazon Linux 2 compatible environment like [CloudShell](https://aws.amazon.com/cloudshell/) or [Cloud9](https://aws.amazon.com/cloud9/).
 
 ### AWS account requirements
 
