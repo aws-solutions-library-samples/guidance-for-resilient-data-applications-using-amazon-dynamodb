@@ -61,7 +61,7 @@ We also deploy CloudWatch Synthetics canaries in both application regions and in
 
 ### Cost
 
-You are responsible for the cost of the AWS services used while running this Guidance. As of <month> <year>, the cost for running this Guidance with the default settings in the US East (N. Virginia) AWS Region is approximately $<n.nn> per month.
+You are responsible for the cost of the AWS services used while running this Guidance. As of May 2024, the cost for running this Guidance with the default settings in the US East (N. Virginia) AWS Region is approximately $2059 per month. 
 
 The most significant cost for this sample comes from the ARC control plane, which will cost $2.50 per hour or $60 per day.  The CloudWatch canaries will cost $0.36 per hour or about $8.70 per day.
 
@@ -323,7 +323,7 @@ Wait for this stack to complete before moving on.
 
 ## Deployment Validation
 
-To validate everything has deployed successfully, check all of the CloudFormation stacks you deployed in each of your selected regions. All stacks should have a status of *Enabled*.
+To validate everything has deployed successfully, check all of the CloudFormation stacks you deployed from the previous steps in each of your selected regions. All stacks should have a status of *Enabled*.
 
 ## Running the Guidance 
 
@@ -357,8 +357,10 @@ After the test is over, open the CloudWatch dashboard for each region.  Zoom in 
 
 ## Next Steps
 
-Provide suggestions and recommendations about how customers can modify the parameters and the components of the Guidance to further enhance it according to their requirements.
+To incorporate the features this guidance has demonstrated into your own applications, consider
 
+1. adding synthetic checks to your own application
+2. adding Application Recovery Controller (ARC) to your multi-region applications to control routing and failover
 
 ## Cleanup
 
