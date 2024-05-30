@@ -1,10 +1,24 @@
-# Resilient Applications with DynamoDB Global Tables
+# Guidance for Resilient Data Applications using Amazon DynamoDB
+
+## Table of Content
+
+1. [Overview](#overview-required)
+    - [Organization](#organization)
+    - [Architecture](#architecture)    
+    - [Cost](#cost)
+2. [Prerequisites](#prerequisites)
+    - [Operating System](#operating-system)
+3. [Deployment Steps](#deployment-steps)
+4. [Deployment Validation](#deployment-validation)
+5. [Running the Guidance](#running-the-guidance)
+6. [Next Steps](#next-steps)
+7. [Cleanup](#cleanup)
+
+## Overview
 
 This repository has sample code demonstrating how to build a resilient multi-region application with DynamoDB Global Tables as the data store.
 
-## Objectives
-
-This repository aims to demonstrate the basic building blocks of a simple multi-region application designed for high levels of resilience.  The architecture is robust, but it does not include production levels of observability, focusing instead only on the most interesting metrics.  In terms of the Well-Architected Framework:
+We aim to demonstrate the basic building blocks of a simple multi-region application designed for high levels of resilience.  The architecture is robust, but it does not include production levels of observability, focusing instead only on the most interesting metrics.  In terms of the Well-Architected Framework:
 
 * Operational Excellence.  The design benefits from heavy use of serverless technology, which reduces operational overhead.  It touches on, but does not fully explore, the use of runbooks and chaos engineering to test resilience.  
 * Security.  The architecture uses properly scoped security policies at the infrastructure level.  However, it doesn't consider the separation of duties of developers versus operations teams, or provide multiple environments for testing purposes.  It uses default encryption options where applicable.
@@ -15,7 +29,7 @@ This repository aims to demonstrate the basic building blocks of a simple multi-
 
 In the rest of this repository, we'll try to point out areas for improvement that fall outside the scope of the sample code.
 
-## Organization 
+### Organization 
 
 This repository uses CloudFormation as the deployment mechanism for two reasons.  First, CloudFormation is simple to use and available to every AWS user.  Second, some of the supporting AWS services we use, like Resilience Hub, can easily work with CloudFormation.
 
@@ -27,7 +41,7 @@ The repository is built around three main modules:
 * CloudFormation templates to deply Route 53 Application Recovery Controller (ARC) for mult-region routing and failover.
 * CloudFormation template to deploy a simple serverless testing program into two regions.
 
-## Architecture
+### Architecture
 
 The basic application has a simple design.  It consists of an API Gateway, Lambda functions that implement RESTful API methods, and a set of DynamoDB Global Tables for persistence.  Route 53 provides cross-region routing, and Application Recovery Controller inserts routing controls that we can use to shut off traffic to a region if necessary.
 
@@ -41,24 +55,50 @@ We also deploy CloudWatch Synthetics canaries in both application regions and in
 
 ![Monitoring](images/dynamo-global-pattern-monitoring.png)
 
+### Cost
+
+You are responsible for the cost of the AWS services used while running this Guidance. As of May 2024, the cost for running this Guidance with the default settings in the US East (N. Virginia) AWS Region is approximately $2059 per month. 
+
+The most significant cost for this sample comes from the ARC control plane, which will cost $2.50 per hour or $60 per day.  The CloudWatch canaries will cost $0.36 per hour or about $8.70 per day.
+
+The API Gateway, Lambda, and DynamoDB resources used will often fall within the free tier, as these services are metered in the millions of requests.
+
+We recommend creating a [Budget](https://docs.aws.amazon.com/cost-management/latest/userguide/budgets-managing-costs.html) through [AWS Cost Explorer](https://aws.amazon.com/aws-cost-management/aws-cost-explorer/) to help manage costs. Prices are subject to change. For full details, refer to the pricing webpage for each AWS service used in this Guidance.
+
+### Sample Cost Table
+
+The following table provides a sample cost breakdown for deploying this Guidance with the default parameters in the US East (N. Virginia) Region for one month.
+
+| AWS service  | Dimensions | Cost [USD] |
+| ----------- | ------------ | ------------ |
+| Amazon Route53 | 1 Application Recovery Controller (ARC) cluster  | $1800 month |
+| Amazon CloudWatch | 5 canaries running every minute | $259 month |
+
 ## Prerequisites
+
+### Operating System
+
+This guidance is deployed and run from within an AWS Account using an Amazon Linux 2 compatible environment like [CloudShell](https://aws.amazon.com/cloudshell/) or [Cloud9](https://aws.amazon.com/cloud9/).
+
+### AWS account requirements
 
 You need a hosted zone registered in Amazon Route 53. This is used for defining the domain name of your API endpoint, for example, helloworldapi.replacewithyourcompanyname.com. You can use a third-party domain name registrar and then configure the DNS in Amazon Route 53, or you can purchase a domain directly from Amazon Route 53.
 
-The instructions use the AWS CLI rather than the console for consistency.  The console changes frequently and screenshots are usually out of date within weeks, whereas the CLI is stable.  We also use the Python SDK, so make sure you have Python installed, along with the `boto3` module.
+The instructions use the AWS CLI rather than the console for consistency.  The console changes frequently and screenshots are usually out of date within weeks, whereas the CLI is stable. 
 
 You will need an AWS account and access to an Amazon Linux 2 compatible environment ([CloudShell](https://aws.amazon.com/cloudshell/) or [Cloud9](https://aws.amazon.com/cloud9/) are both AWS native ways to achive this) with permission to create resources in several AWS services:
 
-* DynamoDB
-* IAM
-* Lambda
-* API Gateway
-* Route 53
-* S3
+- DynamoDB
+- IAM
+- Lambda
+- API Gateway
+- Route 53
+- S3
+
+
+## Deployment Steps 
 
 Going forward, we will refer to inputs you need to provide in `ALL CAPS`.  This will include the names of S3 buckets and your domain name.
-
-## Deployment
 
 We'll build out the application in several stages, starting with deploying the application into each region, and then adding multi-region routing and a test program.
 
@@ -277,7 +317,11 @@ We'll now deploy a simple testing application that can invoke our API endpoints.
 
 Wait for this stack to complete before moving on.
 
-## Testing
+## Deployment Validation
+
+To validate everything has deployed successfully, check all of the CloudFormation stacks you deployed from the previous steps in each of your selected regions. All stacks should have a status of *Enabled*.
+
+## Running the Guidance 
 
 ### Measuring latency and failover time
 
@@ -307,11 +351,12 @@ After the test is over, open the CloudWatch dashboard for each region.  Zoom in 
 * Replication latency for orders is between 600-1200 ms.  This is approximately the RPO.
 * Operation latency is about 5-20 ms in the same region.
 
-## Cost
+## Next Steps
 
-The most significant cost for this sample comes from the ARC control plane, which will cost  $2.50 per hour or $60 per day.  The CloudWatch canaries will cost $0.36 per hour or about $8.70 per day.
+To incorporate the features this guidance has demonstrated into your own applications, consider
 
-The API Gateway, Lambda, and DynamoDB resources used will often fall within the free tier, as these services are metered in the millions of requests.
+1. adding synthetic checks to your own application
+2. adding Application Recovery Controller (ARC) to your multi-region applications to control routing and failover
 
 ## Cleanup
 
@@ -328,11 +373,9 @@ In order to clean up the resources deployed by this sample, you must delete all 
     * Delete the Route 53 ARC stacks
     * Delete the application stack
 
-## Appendix: DynamoDB Point-in-time Recovery
+## FAQ, known issues, additional considerations, and limitations
 
-Point-in-time recovery protects DynamoDB tables from accidental write or delete operations, allowing you to recover from a point-in-time within 35 days.  You can enable this feature on each local replica of a global table. When you restore the table, the backup restores to an independent table that is not part of the global table.  If you are using Version 2019.11.21, or greater of global tables, you can create a new global table from the restored table. For more information, see [Global tables: How it works](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/V2globaltables_HowItWorks.html) or [CloudFormation Point-in-time Reocvery Specification](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-dynamodb-table-pointintimerecoveryspecification.html) 
-
-## Common Issues
+**Known issues **
 
 `botocore.crt has no method named 'auth'`
 When installing `awscrt` via pip, the version that is installed must match the architecture and Python version of the environment that it will run in. This error occurs when there is a version mismatch.

@@ -4,7 +4,7 @@ AWSTemplateFormatVersion: "2010-09-09"
 # SPDX-License-Identifier: MIT-0
 
 Description: >
-  This template adds CloudWatch Synthetics canary monitors.
+  This template adds CloudWatch Synthetics canary monitors (SO9447).
 
 Parameters:
   ProjectTag:
