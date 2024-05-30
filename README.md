@@ -57,11 +57,7 @@ We also deploy CloudWatch Synthetics canaries in both application regions and in
 
 ### Cost
 
-You are responsible for the cost of the AWS services used while running this Guidance. As of May 2024, the cost for running this Guidance with the default settings in the US East (N. Virginia) AWS Region is approximately $2059 per month. 
-
-The most significant cost for this sample comes from the ARC control plane, which will cost $2.50 per hour or $60 per day.  The CloudWatch canaries will cost $0.36 per hour or about $8.70 per day.
-
-The API Gateway, Lambda, and DynamoDB resources used will often fall within the free tier, as these services are metered in the millions of requests.
+You are responsible for the cost of the AWS services used while running this Guidance. As of May 2024, the cost for running this Guidance with the default settings in the US East (N. Virginia) AWS Region is approximately $2200 per month. 
 
 We recommend creating a [Budget](https://docs.aws.amazon.com/cost-management/latest/userguide/budgets-managing-costs.html) through [AWS Cost Explorer](https://aws.amazon.com/aws-cost-management/aws-cost-explorer/) to help manage costs. Prices are subject to change. For full details, refer to the pricing webpage for each AWS service used in this Guidance.
 
@@ -71,8 +67,11 @@ The following table provides a sample cost breakdown for deploying this Guidance
 
 | AWS service  | Dimensions | Cost [USD] |
 | ----------- | ------------ | ------------ |
-| Amazon Route53 | 1 Application Recovery Controller (ARC) cluster  | $1800 month |
+| Amazon Route53 | 1 Application Recovery Controller (ARC) Cluster  | $1800 month |
+| Amazon Route53 | 3 Application Recovery Controller (ARC) Readiness Checks | $98 month |
 | Amazon CloudWatch | 5 canaries running every minute | $259 month |
+
+The [Amazon API Gateway](https://aws.amazon.com/api-gateway/), [AWS Lambda](https://aws.amazon.com/lambda/), and [Amazon DynamoDB](https://aws.amazon.com/dynamodb/) resources used will often fall within the free tier, as these services are metered in the millions of requests.
 
 ## Prerequisites
 
