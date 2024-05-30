@@ -72,7 +72,7 @@ The following table provides a sample cost breakdown for deploying this Guidance
 | AWS service  | Dimensions | Cost [USD] |
 | ----------- | ------------ | ------------ |
 | Amazon Route53 | 1 Application Recovery Controller (ARC) cluster  | $1800 month |
-| Amazon CloudWatch | 5 canaries running every minute | $ 259 month |
+| Amazon CloudWatch | 5 canaries running every minute | $259 month |
 
 ## Prerequisites
 
