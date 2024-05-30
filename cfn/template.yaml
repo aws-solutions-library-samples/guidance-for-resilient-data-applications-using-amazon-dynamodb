@@ -6,7 +6,7 @@ AWSTemplateFormatVersion: "2010-09-09"
 Description: >
   This template builds a resilient application using DynamoDB Global Tables.
   This template can deploy either the full stack (including the tables) or just the
-  pieces that live in the secondary region.
+  pieces that live in the secondary region (SO9447).
 
 Metadata:
   AWS::CloudFormation::Interface:
